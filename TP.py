@@ -23,7 +23,7 @@ def cargar_datos():
     datos_dir = "Datos/"
     df_total = pd.DataFrame()
 
-    for anio in range(16, 18):
+    for anio in range(16, 20):
         for trimestre in range(1, 5):
 
             if anio == 16 and trimestre == 1:
@@ -98,8 +98,8 @@ def analisar_univariado(df_total, variable):
     # Se ajusta a los aglomerados que pide el trabajo
     df_filtrado = df_total[df_total["AGLOMERADO"].isin([18, 27])]
 
-    df_limpio = df_filtrado[df_filtrado["ESTADO"] > 0]
-    df_final = df_limpio[["ESTADO", "ANO4", "TRIMESTRE"]]
+    df_limpio = df_filtrado[df_filtrado["ESTADO"] == tasa[variable]]
+    df_final = df_limpio[["ESTADO", "ANO4", "TRIMESTRE", "AGLOMERADO"]]
 
     df_estado_elegido = df_final[df_final["ESTADO"] == tasa[variable]]
 
@@ -108,17 +108,27 @@ def analisar_univariado(df_total, variable):
         print(f"\nNo hay datos de '{variable}' para mostrar.")
         return
 
-    df_estado_elegido["ANO4-TRIM"] = (
+    df_estado_elegido["PERIODO"] = (
         df_estado_elegido["ANO4"].astype(str) + "-T" + df_estado_elegido["TRIMESTRE"].astype(str)
     )
 
-    df_grouped = df_estado_elegido.groupby(["ANO4-TRIM", "ESTADO"]).size().reset_index(name="TOTAL")
+    df_grouped = df_estado_elegido.groupby(["PERIODO", "AGLOMERADO"]).size().reset_index(name="TOTAL")
 
-    pivot = df_grouped.pivot(index="ANO4-TRIM", columns="ESTADO", values="TOTAL")
+    pivot = df_grouped.pivot(index="PERIODO", columns="AGLOMERADO", values="TOTAL").fillna(0)
+
+    nombres_aglomerados = {
+       18: "Gran Mendoza",
+       27: "Comodoro Rivadavia"
+   }
+    
+    pivot = pivot.rename(columns=nombres_aglomerados)
+
+
 
     pivot.plot(kind='bar')
     plt.title(f"Total de {variable} por Año y Trimestre")
     plt.xticks(rotation=45)
+    plt.legend()
     plt.tight_layout()
     plt.show()
 
@@ -127,7 +137,7 @@ def analisar_univariado(df_total, variable):
 def estadisticas_resumen(df_total):
     print("\n==============================================")
     print(" MEDIDAS DE TENDENCIA CENTRAL DE INGRESOS")
-    print("==============================================")
+    print("================================================")
 
     df = df_total.copy()
 
@@ -204,6 +214,7 @@ def analizar_multivariado(df_total, variable):
     pivot.plot(kind="bar")
     plt.title(f"{variable} por Sexo a lo largo del tiempo")
     plt.xticks(rotation=45)
+    plt.legend()
     plt.tight_layout()
     plt.show()
 
