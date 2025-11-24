@@ -1,12 +1,12 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import geopandas as gpd
-from pathlib import Path
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, r2_score
 import sys
 import warnings
+
 
 warnings.filterwarnings("ignore", category=pd.errors.DtypeWarning)
 warnings.filterwarnings("ignore", category=pd.errors.SettingWithCopyWarning)
@@ -23,7 +23,7 @@ def cargar_datos():
     datos_dir = "Datos/"
     df_total = pd.DataFrame()
 
-    for anio in range(16, 20):
+    for anio in range(16, 26):
         for trimestre in range(1, 5):
 
             if anio == 16 and trimestre == 1:
@@ -117,9 +117,9 @@ def analisar_univariado(df_total, variable):
     pivot = df_grouped.pivot(index="PERIODO", columns="AGLOMERADO", values="TOTAL").fillna(0)
 
     nombres_aglomerados = {
-       18: "Gran Mendoza",
-       27: "Comodoro Rivadavia"
-   }
+        18: "Gran Mendoza",
+        27: "Comodoro Rivadavia"
+    }
     
     pivot = pivot.rename(columns=nombres_aglomerados)
 
@@ -128,16 +128,16 @@ def analisar_univariado(df_total, variable):
     pivot.plot(kind='bar')
     plt.title(f"Total de {variable} por Año y Trimestre")
     plt.xticks(rotation=45)
-    plt.legend()
+    plt.legend(loc="upper left")
     plt.tight_layout()
     plt.show()
 
 # ESTADÍSTICAS RESUMEN (MEDIA, MEDIANA, PERCENTILES)
 
 def estadisticas_resumen(df_total):
-    print("\n==============================================")
+    print("="*48)
     print(" MEDIDAS DE TENDENCIA CENTRAL DE INGRESOS")
-    print("================================================")
+    print("="*48)
 
     df = df_total.copy()
 
@@ -166,57 +166,131 @@ def estadisticas_resumen(df_total):
     print(f"Mediana:    ${mediana:,.2f}")
     print(f"Percentil 25: ${p25:,.2f}")
     print(f"Percentil 75: ${p75:,.2f}")
-    print("==============================================\n")
+    print("="*46)
 
-
-# MULTIVARIADO (Sexo, Nivel Educativo, Categoría, Rama)
+#  MULTIVARIADO
 
 def analizar_multivariado(df_total, variable):
 
-    tasa = {
+    # Mapas
+    mapa_estado = {
         "Ocupados": 1,
         "Desocupados": 2,
         "Inactivo": 3,
         "Menor de 10 años": 4
     }
 
-    df_total = df_total.copy()
-    columnas = ["ESTADO", "AGLOMERADO", "CH04"]
-    for col in columnas:
-        df_total[col] = pd.to_numeric(df_total[col], errors="coerce")
+    mapa_sexo = {1: "Masculino", 2: "Femenino"}
 
-    df_total = df_total.dropna(subset=columnas)
-    df_total = df_total.astype({"ESTADO": int, "AGLOMERADO": int, "CH04": int})
+    # Educación simple
+    def clasificar_educacion(x):
+        try:
+            x = int(x)
+        except:
+            return "NS/NR"
 
-    df_filtrado = df_total[df_total["AGLOMERADO"].isin([18, 27])]
+        if x in [1,2,3,4,5,6]:   # Primaria + Secundaria
+            return "Básico"
+        if x in [7,8,9]:         # Superior
+            return "Superior"
+        return "NS/NR"
 
-    df_estado = df_filtrado[df_filtrado["ESTADO"] == tasa[variable]].copy()
+    df = df_total.copy()
 
-    # Verificar que hay datos
-    if len(df_estado) == 0:
-        print(f"\nNo hay datos de '{variable}' para mostrar.")
+    for col in ["AGLOMERADO", "ANO4", "TRIMESTRE"]:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    df = df.dropna(subset=["AGLOMERADO", "ANO4", "TRIMESTRE"])
+    df["AGLOMERADO"] = df["AGLOMERADO"].astype(int)
+    df = df[df["AGLOMERADO"].isin([18, 27])]
+
+    df["PERIODO"] = df["ANO4"].astype(int).astype(str) + "-T" + df["TRIMESTRE"].astype(int).astype(str)
+
+
+# ESTADO (con SEXO)
+
+    if variable in mapa_estado:
+
+        df = df.copy()
+        df["ESTADO"] = pd.to_numeric(df["ESTADO"], errors="coerce")
+        df["CH04"] = pd.to_numeric(df["CH04"], errors="coerce")
+
+        df = df.dropna(subset=["ESTADO", "CH04"])
+        df["ESTADO"] = df["ESTADO"].astype(int)
+        df["CH04"] = df["CH04"].astype(int)
+
+        df = df[df["ESTADO"] == mapa_estado[variable]]
+        df["SEXO"] = df["CH04"].map(mapa_sexo)
+
+        if len(df) == 0:
+            print(f"No hay datos suficientes para {variable}.")
+            return
+
+        df_grouped = df.groupby(["PERIODO", "AGLOMERADO", "SEXO"]).size().reset_index(name="TOTAL")
+
+        df_grouped["CATEGORIA"] = (
+            df_grouped["AGLOMERADO"].astype(str) + " - " + df_grouped["SEXO"]
+        )
+
+        pivot = df_grouped.pivot(index="PERIODO", columns="CATEGORIA", values="TOTAL").fillna(0)
+
+        nombres_aglomerados = {
+        18: "Gran Mendoza",
+        27: "Comodoro Rivadavia"
+    }
+        
+        df_grouped["AGLOMERADO_TXT"] = df_grouped["AGLOMERADO"].map(nombres_aglomerados)
+
+
+        df_grouped["CATEGORIA"] = df_grouped["AGLOMERADO_TXT"] + "-" + df_grouped["SEXO"]
+
+        pivot = df_grouped.pivot(index="PERIODO", columns="CATEGORIA", values="TOTAL").fillna(0)
+    
+
+        pivot.plot(kind="bar", figsize=(8, 4))
+        plt.title(f"{variable} — Comparación por Sexo y Aglomerado")
+        plt.xticks(rotation=45)
+        plt.legend(loc="upper left")
+        plt.tight_layout()
+        plt.show()
         return
 
-    # Crear periodo
-    df_estado["ANO4-TRIM"] = df_estado["ANO4"].astype(str) + "-T" + df_estado["TRIMESTRE"].astype(str)
 
-    # Mapa sexo
-    mapa_sexo = {1: "Masculino", 2: "Femenino"}
-    df_estado["SEXO"] = df_estado["CH04"].map(mapa_sexo)
+    # EDUCACIÓN SIMPLE
+    if variable.lower() == "educacion":
 
-    # PLOT
-    df_grouped = df_estado.groupby(["ANO4-TRIM", "SEXO"]).size().reset_index(name="TOTAL")
-    pivot = df_grouped.pivot(index="ANO4-TRIM", columns="SEXO", values="TOTAL")
-    
-    # Rellenar NaN para evitar errores
-    pivot = pivot.fillna(0)
+        nombres_aglomerados = {
+            18: "Gran Mendoza",
+            27: "Comodoro Rivadavia"
+        }
 
-    pivot.plot(kind="bar")
-    plt.title(f"{variable} por Sexo a lo largo del tiempo")
-    plt.xticks(rotation=45)
-    plt.legend()
-    plt.tight_layout()
-    plt.show()
+        # Clasificar nivel educativo
+        df["NIVEL_SIMPLE"] = df["NIVEL_ED"].apply(clasificar_educacion)
+
+        df_grouped = df.groupby(
+            ["PERIODO", "AGLOMERADO", "NIVEL_SIMPLE"]
+        ).size().reset_index(name="TOTAL")
+
+        df_grouped["AGLOMERADO_TXT"] = df_grouped["AGLOMERADO"].map(nombres_aglomerados)
+
+        df_grouped["CATEGORIA"] = (
+            df_grouped["AGLOMERADO_TXT"] + " - " + df_grouped["NIVEL_SIMPLE"]
+        )
+
+        pivot = df_grouped.pivot(
+            index="PERIODO", 
+            columns="CATEGORIA", 
+            values="TOTAL"
+        ).fillna(0)
+
+        # Gráfico uniforme
+        pivot.plot(kind="bar", figsize=(8, 4))
+        plt.title("Nivel Educativo — Comparación entre Aglomerados")
+        plt.xticks(rotation=45)
+        plt.legend(loc="upper left")
+        plt.tight_layout()
+        plt.show()
+        return
 
 
 #  MODELO DE REGRESIÓN + IMPUTACIÓN (punto obligatorio)
@@ -259,38 +333,62 @@ def modelacion_regresion(df_total):
     })
 
     print("\nInfluencia de las variables:")
-    print("-------------------------------------------------------")
+    print("-"*55)
     print("Variable                       |  Coeficiente")
-    print("-------------------------------------------------------")
+    print("-"*55)
     for v, c in zip(coef_df["Variable"], coef_df["Coeficiente"]):
         print(f"{v:<30} | {c:>10.2f}")
-    print("-------------------------------------------------------")
+    print("-"*55)
 
 
     return modelo
 
-#  MAPA GEOREFERENCIADO
-
 def mapa_aglomerados():
-
+    # Cargar el archivo
     try:
-        mapa = gpd.read_file("Datos/argentina_aglomerados.shp")
-    except:
-        print("No se encontró el archivo SHP. No se puede generar el mapa.\n")
+        mapa = gpd.read_file("Datos/aglomerados_eph.json", driver="GeoJSON")
+    except Exception as e:
+        print("Error al cargar el archivo GeoJSON:", e)
         return
 
-    # Códigos INDEC reales
-    codigos = {
-        18: "Gran Mendoza",
-        27: "Comodoro Rivadavia"
-    }
+    # Aglomerados - filtrar por nombre directamente
+    nombres = ["Gran Mendoza", "Comodoro Rivadavia"]
+    
+    mapa_filtrado = mapa[mapa["aglomerado"].isin(nombres)].copy()
+    
+    # Verificar que se encontraron datos
+    if len(mapa_filtrado) == 0:
+        print("No se encontraron Gran Mendoza y Comodoro Rivadavia en el archivo")
+        return
+    
+    mapa_filtrado["nombre"] = mapa_filtrado["aglomerado"]
 
-    mapa_filtrado = mapa[mapa["AGLOMERADO"].isin([18, 27])]
+    # Asegurar que tiene sistema de coordenadas
+    if mapa_filtrado.crs is None:
+        mapa_filtrado = mapa_filtrado.set_crs("EPSG:4326")
 
-    mapa_filtrado.plot(edgecolor="black", figsize=(8, 6))
-    plt.title("Aglomerados analizados: Gran Mendoza y Comodoro Rivadavia")
+    # Plot
+    fig, axes = plt.subplots(1, 2, figsize=(11, 6))
+    
+    # Mapa 1: Gran Mendoza
+    mendoza = mapa_filtrado[mapa_filtrado["nombre"] == "Gran Mendoza"]
+    mendoza.plot(ax=axes[0], color="lightblue", edgecolor="black")
+    axes[0].set_title("Gran Mendoza", fontsize=12, weight='bold')
+    axes[0].set_xlabel("Longitud")
+    axes[0].set_ylabel("Latitud")
+    axes[0].grid(True, linestyle="--", alpha=0.4)
+    
+    # Mapa 2: Comodoro Rivadavia
+    comodoro = mapa_filtrado[mapa_filtrado["nombre"] == "Comodoro Rivadavia"]
+    comodoro.plot(ax=axes[1], color="lightcoral", edgecolor="black")
+    axes[1].set_title("Comodoro Rivadavia", fontsize=12, weight='bold')
+    axes[1].set_xlabel("Longitud")
+    axes[1].set_ylabel("Latitud")
+    axes[1].grid(True, linestyle="--", alpha=0.4)
+    
+    fig.suptitle("Aglomerados EPH: Gran Mendoza y Comodoro Rivadavia", fontsize=14, weight='bold')
+    plt.tight_layout()
     plt.show()
-
 
 #  MENÚ
 
@@ -342,10 +440,11 @@ def menu(df_total):
             "2 = Desocupados\n"
             "3 = Inactivo\n"
             "4 = Menor de 10 años\n"
+            "5 = Educacion\n"
             "0 = Volver")
 
             variable = input("Ingrese la opción: ")
-            while variable not in ["1", "2", "3", "4", "0"]:
+            while variable not in ["1", "2", "3", "4", "5", "0"]:
                 variable = input("Opción inválida. Ingrese la opción: ")
             if variable == "0":
                 break
@@ -354,7 +453,8 @@ def menu(df_total):
                 "1": "Ocupados",
                 "2": "Desocupados",
                 "3": "Inactivo",
-                "4": "Menor de 10 años"
+                "4": "Menor de 10 años",
+                "5": "Educacion",
             }
             if variable in mapa:
                 analizar_multivariado(df_total, mapa[variable])
